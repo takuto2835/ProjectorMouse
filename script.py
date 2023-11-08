@@ -6,6 +6,9 @@ from sklearn.cluster import DBSCAN
 from pynput.mouse import Button, Controller
 import time
 
+
+#test
+
 def initialize_realsense():
     try:
         pipeline = rs.pipeline()
