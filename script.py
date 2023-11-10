@@ -71,13 +71,20 @@ def apply_mask_to_vertices(vertices, mask):
     """
     Applies a binary mask to the vertices. Only vertices within the mask's foreground are kept.
     """
-    masked_vertices = []
-    for vertex in vertices:
-        x_int = int(vertex[0] * SCALING) + OFFSET_X
-        z_int = int(vertex[1] * SCALING) + OFFSET_Y
-        if not mask[z_int, x_int]:  # Check if the vertex is within the mask's foreground
-            masked_vertices.append(vertex)
-    return np.array(masked_vertices)
+    try:
+        masked_vertices = []
+        height, width = mask.shape  # maskの高さと幅を取得
+        for vertex in vertices:
+            x_int = int(vertex[0] * SCALING) + OFFSET_X
+            z_int = int(vertex[1] * SCALING) + OFFSET_Y
+            # 範囲チェックを追加
+            if 0 <= z_int < height and 0 <= x_int < width:
+                if not mask[z_int, x_int]:  # Check if the vertex is within the mask's foreground
+                    masked_vertices.append(vertex)
+        return np.array(masked_vertices)
+    except Exception as e:
+        print(f"Error in apply_mask_to_vertices: {e}")
+        return None
 
 
 # Initialize the RealSense camera
@@ -159,11 +166,11 @@ def visualize_cluster_ids(vis_image, new_cluster_ids):
     for (mean_x, mean_z), current_id in new_cluster_ids.items():
         mean_x_int = int(mean_x * SCALING) + OFFSET_X
         mean_z_int = int(mean_z * SCALING) + OFFSET_Y
-        cv2.circle(vis_image, (mean_x_int, mean_z_int), 10, 150, 2)
-        cv2.putText(vis_image, str(current_id), (mean_x_int + 20, mean_z_int - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 150)
+        cv2.circle(vis_image, (mean_x_int, mean_z_int), 10,(255, 255, 255), 2)
+        cv2.putText(vis_image, str(current_id), (mean_x_int + 20, mean_z_int - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
 
-def overlay_mask_on_image(vis_image, mask, mask_color=(0, 255, 0), alpha=0.5):
+def overlay_mask_on_image(vis_image, mask, mask_color=(0, 255, 0), alpha=0.3):
     """
     Overlays a binary mask on top of the visualization image.
 
@@ -183,10 +190,8 @@ def overlay_mask_on_image(vis_image, mask, mask_color=(0, 255, 0), alpha=0.5):
     # This means we need to index where mask is True, and for these indices, set the color
     color_mask[mask] = mask_color
     # Blend the color mask with the image
-    vis_image = cv2.addWeighted(color_mask, alpha, vis_image, 1 - alpha, 0)
+    vis_image = cv2.addWeighted(color_mask, alpha, vis_image, 1 - alpha, 1)
     return vis_image
-
-
 
 
 # Update cluster IDs based on the current frame
@@ -243,10 +248,7 @@ def main():
                 continue  # Skip if the frame is not ready
             
             points = pc.calculate(depth_frame)
-            vertices = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)        
-
-
-    
+            vertices = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)          
 
             # Convert FOV from degrees to radians for calculation
             fov_rad = math.radians(FOV_DEGREES)
@@ -263,11 +265,10 @@ def main():
             
             # Filter vertices and update clusters
             filtered_indices = filter_vertices(vertices)
-            filtered_vertices = vertices[filtered_indices][:, [0, 2]]
-                
+            filtered_vertices = vertices[filtered_indices][:, [0, 2]]               
 
             
-             # マスクが存在しない場合にのみ生成
+            # マスクが存在しない場合にのみ生成
             if initial_mask is None:
                 filtered_vertices = vertices[filtered_indices][:, [0, 2]]
                 initial_mask = create_mask_from_vertices(filtered_vertices, 10)
@@ -276,7 +277,8 @@ def main():
             masked_vertices = apply_mask_to_vertices(filtered_vertices, initial_mask)
 
             visualize_filtered_vertices(vis_image, filtered_vertices)
-                        # Usage example:
+            
+            # Usage example:
             # Assuming 'vis_image' is the image you want to overlay the mask on,
             # and 'mask' is the binary mask array with the same size as 'vis_image'.
             if initial_mask is not None:                    
@@ -286,10 +288,6 @@ def main():
 
                 cluster_ids, next_id = update_cluster_ids(masked_vertices, cluster_ids, next_id)
                 visualize_cluster_ids(vis_image, cluster_ids)
-
-                
-
-
                 # Mouse control logic
                 if cluster_ids:
                     min_id = min(cluster_ids.values())
@@ -306,7 +304,18 @@ def main():
 
             # Display the visualization
             cv2.imshow('Top View with Average', vis_image)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+
+            # キーボード入力を待つ
+            k = cv2.waitKey(1)
+
+            # 'q'キーまたは'esc'キーが押されたらループを抜ける
+            if k == ord('q') or k == 27:
+                print("User pushed the end key")
+                break
+
+            # ウィンドウが閉じられたかチェック
+            if cv2.getWindowProperty('Top View with Average', cv2.WND_PROP_VISIBLE) < 1:
+                print("User pushed the close button")
                 break
 
     except KeyboardInterrupt:
@@ -316,6 +325,7 @@ def main():
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
+        print("Close all windows")
 
 if __name__ == "__main__":
     main()
